@@ -1,0 +1,32 @@
+# 忽略 Python 编译文件
+__pycache__/
+*.py[cod]
+*.pyo
+
+# 忽略虚拟环境
+venv/
+ENV/
+env/
+
+# 忽略环境变量文件
+.env
+
+# 忽略日志文件
+*.log
+
+# 忽略 VSCode 配置（如果你用 VSCode）
+.vscode/
+
+# 忽略 macOS 系统垃圾文件
+.DS_Store
+
+# 忽略 PyCharm 配置（如果你用 PyCharm）
+.idea/
+
+# 忽略 test cache
+.pytest_cache/
+
+# 忽略 Render 的本地 build 文件（如果以后用到）
+build/
+dist/
+*.egg-info/
