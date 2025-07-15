@@ -4,17 +4,16 @@ services:
     env: python
     plan: free
     buildCommand: "pip install -r requirements.txt"
-    pip list
     startCommand: "python -m uvicorn main:app --host 0.0.0.0 --port $PORT"
+    includedPaths:
+      - main.py
     envVars:
-       - key: BASE_URL
-        value: "https://sokphy.onrender.com"
       - key: ENV
         value: production
       - key: DATABASE_URL
-        value: "postgresql+asyncpg://"postgresql+asyncpg://<USERNAME>:<PASSWORD>@<HOST>:<PORT>/<DBNAME>"
+        value: "postgresql+asyncpg://YOUR_USER:YOUR_PASS@YOUR_HOST:5432/YOUR_DB"
       - key: REDIS_URL
-        value: "redis://YOUR_REDIS_USER:YOUR_REDIS_PASS@YOUR_REDIS_HOST:6379/0"
+        value: "redis://YOUR_REDIS_URL"
       - key: PAYMENT_API_BASE
         value: "https://api.alipay.com/v1"
       - key: BOT_ADMINS
