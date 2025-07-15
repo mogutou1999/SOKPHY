@@ -9,7 +9,7 @@ services:
       - key: ENV
         value: production
       - key: DATABASE_URL
-        value: "postgresql+asyncpg://YOUR_USER:YOUR_PASS@YOUR_HOST:5432/YOUR_DB"
+        value: "postgresql+asyncpg://"postgresql+asyncpg://<USERNAME>:<PASSWORD>@<HOST>:<PORT>/<DBNAME>"
       - key: REDIS_URL
         value: "redis://YOUR_REDIS_USER:YOUR_REDIS_PASS@YOUR_REDIS_HOST:6379/0"
       - key: PAYMENT_API_BASE
