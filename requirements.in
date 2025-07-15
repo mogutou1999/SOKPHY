@@ -1,0 +1,46 @@
+# 异步核心框架 (最新稳定版)
+aiogram==3.4  # 原3.3 → 升级到3.4
+fastapi==0.111.0
+uvicorn[standard]==0.29.0  # 包含watchfiles和httptools
+uvicorn
+# 异步数据库驱动
+sqlalchemy==2.0.30  # 支持Python 3.11+异步API
+asyncpg==0.29.0
+aiosqlite==0.20.0
+arq==0.29.2  # 新增：Redis异步任务队列
+
+# 安全认证 (异步兼容版)
+python-jose[cryptography]==3.3.0
+bcrypt==4.1.2
+authlib==1.3.0  # 新增：替代python-keycloak
+hvac==2.1.0
+cryptography==42.0.5  # 保持>=45.0.4要求
+
+# 异步HTTP/网络
+httpx==0.27.0
+aiohttp==3.9.5
+websockets==12.0  # 新增：WebSocket支持
+
+# 异步工具链
+anyio==4.3.0
+tenacity==8.2.3
+aiofiles==23.2.1
+watchfiles==0.21.0  # 独立出uvicorn的监控依赖
+
+# 日志/配置 (异步友好)
+structlog==24.1.0  # 新增：替代python-json-logger
+loguru==0.7.2
+pydantic-settings==2.2.1  # 必须使用v2版本
+python-dotenv==1.0.1
+
+# 开发工具 (异步调试)
+pytest-asyncio==0.23.6
+pytest-xdist==3.5.0  # 新增：异步测试并行化
+ipython==8.23.0
+debugpy==1.8.1
+
+# 生产环境
+celery[redis]==5.3.6  # 需配合aiogram使用时降级
+uvloop==0.19.0  # Linux专属加速
+redis
+
