@@ -7,7 +7,7 @@ from aiogram.filters import Command
 # 设置日志
 logging.basicConfig(level=logging.INFO)
 
-API_TOKEN ="7893903290:AAEbZ0tFJBpXF-sOv8uPDhiORgTnZEg3pwo" 
+API_TOKEN =
 
 # 初始化 Bot 和 Dispatcher
 bot = Bot(token=API_TOKEN, parse_mode="HTML")
