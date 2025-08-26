@@ -131,18 +131,22 @@ def _check_cooldown(user_id: int, cooldown: int) -> int:
 # -----------------------------
 # 安全消息发送
 # -----------------------------
-async def safe_reply(
-    event: Union[Message, CallbackQuery], text: str, **kwargs: Any
-) -> None:
+async def safe_reply(event: Union[Message, CallbackQuery], text: str, **kwargs):
     """
-    统一安全回复：Message / CallbackQuery 都可用
+    安全回复函数，支持 Message 和 CallbackQuery 类型。
+
+    :param event: 事件对象，可能是 Message 或 CallbackQuery
+    :param text: 回复的文本内容
     """
     try:
         if isinstance(event, Message):
             await event.answer(text, **kwargs)
         elif isinstance(event, CallbackQuery):
+            # 回复消息文本
             if event.message:
-                await event.message.answer(text, **kwargs)
+                message = cast(Message, event.message)  # 显式转换为 Message 类型
+                await message.answer(text, **kwargs)
+            # 回答回调，防止 loading 圈圈
             with suppress(Exception):
                 await event.answer()
     except Exception as e:
@@ -156,6 +160,7 @@ async def handle_start(message: Message, db: AsyncSession, bot: Bot) -> None:
     from handlers.auth import get_or_create_user  # 延迟导入，避免循环依赖
 
     user = cast(User, message.from_user)
+    
 
     # 创建用户记录
     new_user = await get_or_create_user(db, user)
