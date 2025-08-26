@@ -7,7 +7,7 @@ from aiogram.types import Message
 from sqlalchemy import select, func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from db.session import async_session_maker
 from db.models import User, Order
 from config.settings import settings
 from pydantic import BaseModel
@@ -77,7 +77,7 @@ async def handle_stats(message: Message):
         return
     user_id = message.from_user.id
 
-    async with AsyncSession() as db:
+    async with async_session_maker() as db:
         user = await get_user_by_id(db, user_id)
 
         if not is_admin(user_id):
