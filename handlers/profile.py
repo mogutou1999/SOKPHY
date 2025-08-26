@@ -1,65 +1,64 @@
+from typing import Optional
 from aiogram import Router, types, F
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message,CallbackQuery,  ReplyKeyboardMarkup, ReplyKeyboardRemove,KeyboardButton
-from aiogram.utils.keyboard import ReplyKeyboardBuilder
+from aiogram.types import (
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    Message,
+    CallbackQuery,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+    KeyboardButton,
+)
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
-from sqlalchemy.ext.asyncio import AsyncSession
 from db.models import User
 from db.session import async_session_maker
-from config import settings
-from sqlalchemy import select, update
+from sqlalchemy import select
 import logging
-from datetime import datetime
-import random
-from typing import Dict, Optional
+from datetime import datetime, timezone
 from config.settings import settings
+from aiogram.types import Message as TgMessage
+from utils.decorators import db_session, handle_errors
 
 router = Router()
 logger = logging.getLogger(__name__)
 
-LANGUAGE_OPTIONS = {
-    "en": "English",
-    "zh": "中文",
-    "es": "Español"
-}
+LANGUAGE_OPTIONS = {"en": "English", "zh": "中文", "es": "Español"}
 
 ADMIN_IDS = settings.admin_ids
+
+
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
+
 
 class ProfileStates(StatesGroup):
     CHOICE = State()
     AWAIT_EMAIL = State()
     AWAIT_PHONE = State()
-    AWAIT_LANGUAGE = State()
+
 
 class VerificationStates(StatesGroup):
     AWAIT_VERIFICATION = State()
 
-verification_codes: Dict[int, str] = {}
 
-def setup_profile_handlers(router: Router) -> None:
-    profile_router = Router()
-
-    @profile_router.message(F.text == "/profile")
-    async def handle_profile(message: Message) -> None:
-        await message.answer("✅ Profile handler: /profile 命令收到。")
-
-    router.include_router(profile_router)
-
-
-
-
-
+# ======================
+# /profile 查看资料
+# ======================
 @router.message(Command("profile"))
 async def get_user_profile(message: types.Message, state: FSMContext):
-    user_id = message.from_user.id  # type: ignore[attr-defined]
+    user_id: Optional[int] = getattr(message.from_user, "id", None)
+    if not user_id:
+        await message.answer("⚠️ 无法获取用户ID")
+        return
+
     async with async_session_maker() as session:
         result = await session.execute(select(User).where(User.telegram_id == user_id))
-        user = result.scalar_one_or_none()
+        user: Optional[User] = result.scalar_one_or_none()
+
         if not user:
-            await message.answer("⚠️ 未找到您的用户信息。")
+            await message.answer("⚠️ 未找到您的用户信息。请先使用 /start 注册。")
             return
 
         text = (
@@ -67,172 +66,176 @@ async def get_user_profile(message: types.Message, state: FSMContext):
             f"ID: {user.telegram_id}\n"
             f"用户名: @{user.username or '无'}\n"
             f"邮箱: {user.email or '未设置'}\n"
+            f"手机号: {user.phone or '未设置'}\n"
             f"语言: {user.language or '未设置'}\n"
             f"注册时间: {user.created_at.strftime('%Y-%m-%d %H:%M:%S')}"
         )
 
         keyboard = ReplyKeyboardMarkup(
             keyboard=[
-                [KeyboardButton(text="📧 修改邮箱"), KeyboardButton(text="📱 修改手机号")],
-                [KeyboardButton(text="🌐 修改语言"), KeyboardButton(text="❌ 取消")]
+                [
+                    KeyboardButton(text="📧 修改邮箱"),
+                    KeyboardButton(text="📱 修改手机号"),
+                ],
+                [KeyboardButton(text="🌐 修改语言"), KeyboardButton(text="❌ 取消")],
             ],
-    resize_keyboard=True,
-    one_time_keyboard=True
-)
+            resize_keyboard=True,
+            one_time_keyboard=True,
+        )
 
         await message.answer(text)
         await message.answer("请选择要修改的项目：", reply_markup=keyboard)
         await state.set_state(ProfileStates.CHOICE)
 
+
+# ======================
+# 修改选项选择
+# ======================
 @router.message(ProfileStates.CHOICE)
-async def handle_choice(message: Message, state: FSMContext):
-    text = message.text
-    if text == "📧 修改邮箱":
+async def handle_choice(message: types.Message, state: FSMContext):
+    if message.text == "📧 修改邮箱":
         await message.answer("请输入新邮箱：", reply_markup=ReplyKeyboardRemove())
         await state.set_state(ProfileStates.AWAIT_EMAIL)
-    elif text == "📱 修改手机号":
+    elif message.text == "📱 修改手机号":
         await message.answer("请输入新手机号：", reply_markup=ReplyKeyboardRemove())
         await state.set_state(ProfileStates.AWAIT_PHONE)
-    elif text == "🌐 修改语言":
-        await message.answer("请输入语言代码（例如：en、zh、es）：", reply_markup=ReplyKeyboardRemove())
-        await state.set_state(ProfileStates.AWAIT_LANGUAGE)
-    elif text == "❌ 取消":
+    elif message.text == "🌐 修改语言":
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text=name, callback_data=f"set_lang_{code}")]
+                for code, name in LANGUAGE_OPTIONS.items()
+            ]
+        )
+        await message.answer("请选择语言：", reply_markup=keyboard)
+        await state.clear()
+    elif message.text == "❌ 取消":
         await state.clear()
         await message.answer("操作已取消。", reply_markup=ReplyKeyboardRemove())
     else:
         await message.answer("无效选项，请重新选择。")
 
+
+# ======================
+# 更新邮箱
+# ======================
 @router.message(ProfileStates.AWAIT_EMAIL)
-async def update_email(message: Message, state: FSMContext):
-    if not message.text:
-        await message.answer("❌ 无效输入，请重新输入手机号。")
+async def update_email(message: types.Message, state: FSMContext):
+    if not message.text or "@" not in message.text:
+        await message.answer("❌ 无效邮箱，请重新输入。")
         return
 
-    new_phone = message.text.strip()
-    user_id = message.from_user.id   # type: ignore[attr-defined]
+    user_id: Optional[int] = getattr(message.from_user, "id", None)
+    if not user_id:
+        await message.answer("⚠️ 无法获取用户ID")
+        return
 
     async with async_session_maker() as session:
         result = await session.execute(select(User).where(User.telegram_id == user_id))
-        user = result.scalar_one_or_none()
+        user: Optional[User] = result.scalar_one_or_none()
         if user:
-            user.phone = new_phone
+            user.email = message.text.strip()
             await session.commit()
-            await message.answer(f"✅ 手机号已更新为：{new_phone}")
+            await message.answer(f"✅ 邮箱已更新为：{user.email}")
         else:
             await message.answer("⚠️ 用户未找到。")
     await state.clear()
+
+
+# ======================
+# 更新手机号
+# ======================
 @router.message(ProfileStates.AWAIT_PHONE)
-async def update_phone(message: Message, state: FSMContext):
-    if not message.text:
-        await message.answer("❌ 无效输入，请重新输入手机号。")
+async def update_phone(message: types.Message, state: FSMContext):
+    if not message.text or not message.text.isdigit():
+        await message.answer("❌ 无效手机号，请重新输入。")
         return
 
-    new_phone = message.text.strip()
-    user_id = message.from_user.id   # type: ignore[attr-defined]
+    user_id: Optional[int] = getattr(message.from_user, "id", None)
+    if not user_id:
+        await message.answer("⚠️ 无法获取用户ID")
+        return
 
     async with async_session_maker() as session:
         result = await session.execute(select(User).where(User.telegram_id == user_id))
-        user = result.scalar_one_or_none()
+        user: Optional[User] = result.scalar_one_or_none()
         if user:
-            user.phone = new_phone
+            user.phone = message.text.strip()
             await session.commit()
-            await message.answer(f"✅ 手机号已更新为：{new_phone}")
-        else:
-            await message.answer("⚠️ 用户未找到。")
-    await state.clear()
-@router.message(ProfileStates.AWAIT_LANGUAGE)
-async def update_language(message: Message, state: FSMContext):
-    if not message.text:
-        await message.answer("❌ 无效输入，请重新输入语言代码。")
-        return
-
-    new_lang = message.text.strip()
-    user_id = message.from_user.id # type: ignore[attr-defined]
-    async with async_session_maker() as session:
-        result = await session.execute(select(User).where(User.telegram_id == user_id))
-        user = result.scalar_one_or_none()
-        if user:
-            user.language = new_lang
-            await session.commit()
-            await message.answer(f"✅ 语言偏好已更新为：{new_lang}")
+            await message.answer(f"✅ 手机号已更新为：{user.phone}")
         else:
             await message.answer("⚠️ 用户未找到。")
     await state.clear()
 
-@router.message(F.text.in_(["en", "zh", "es"]))
-async def handle_language_reply(message: types.Message):
-    keyboard = ReplyKeyboardMarkup(
-        list=[["en", "zh", "es"]],
-        resize_keyboard=True,
-        one_time_keyboard=True,
-    )
-    await message.answer("请选择语言代码：", reply_markup=keyboard)
 
-@router.message(Command("start"))
-async def handle_start(message: Message):
-    ...
-    if not message.text:
-        await message.answer("❌ 无效输入")
-        return
-    lang = message.text.strip()
-    user_id = message.from_user.id   # type: ignore[attr-defined]
-    async with async_session_maker() as session:
-        result = await session.execute(select(User).where(User.telegram_id == user_id))
-        user = result.scalar_one_or_none()
-        if not user:
-            await message.answer("⚠️ 用户不存在。")
-            return
-        user.language = lang
-        await session.commit()
-        await message.answer(f"✅ 语言已设置为 {lang}", reply_markup=ReplyKeyboardRemove())
-
-@router.callback_query(F.data == "update_language")
-async def choose_language(callback: types.CallbackQuery):
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(name, callback_data=f"set_lang_{code}")]
-        for code, name in LANGUAGE_OPTIONS.items()
-    ])
-    if callback.message:
-        await callback.message("请选择语言：", reply_markup=keyboard)
-    else:
-        await callback.answer("⚠️ 无法编辑消息", show_alert=True)
-    await callback.answer()
-
+# ======================
+# 语言选择回调
+# ======================
 @router.callback_query(F.data.startswith("set_lang_"))
 async def set_language_callback(callback: types.CallbackQuery):
-    if not callback.data:
-        await callback.answer("⚠️ 回调数据为空")
-        return
+    data = callback.data or ""  # 确保不是 None
+    lang_code: str = data.replace("set_lang_", "")
 
-    lang_code = callback.data.replace("set_lang_", "")
-    user_id = callback.from_user.id
-
-    if not callback.message:
-        await callback.answer("⚠️ 无法编辑消息")
+    user_id: Optional[int] = getattr(callback.from_user, "id", None)
+    if not user_id:
+        await callback.answer("⚠️ 无法获取用户ID", show_alert=True)
         return
 
     async with async_session_maker() as session:
         result = await session.execute(select(User).where(User.telegram_id == user_id))
-        db_user = result.scalar_one_or_none()
-
-        if db_user:
-            db_user.language = lang_code
+        user: Optional[User] = result.scalar_one_or_none()
+        if user:
+            user.language = lang_code
             await session.commit()
-            await callback.message(
-                f"✅ 语言已更新为 {LANGUAGE_OPTIONS.get(lang_code, lang_code)}"
-            )
+
+            if isinstance(callback.message, Message):
+                await callback.message.edit_text(
+                    f"✅ 语言已更新为 {LANGUAGE_OPTIONS.get(lang_code, lang_code)}"
+                )
         else:
-            await callback.message("⚠️ 未找到用户信息")
+            await callback.answer("⚠️ 用户未找到。", show_alert=True)
 
     await callback.answer()
 
 
-
+# ======================
+# /start 注册入口
+# ======================
 @router.message(Command("start"))
-async def cmd_start(message: Message):
-    await message.answer("欢迎")
+async def handle_start(message: Message):
+    if not message.from_user:
+        await message.answer("⚠️ 无法获取用户信息")
+        return
+
+    user_id = message.from_user.id
+    async with async_session_maker() as session:
+        result = await session.execute(select(User).where(User.telegram_id == user_id))
+        user = result.scalar_one_or_none()
+
+        if not user:
+            user = User(
+                telegram_id=user_id,
+                username=message.from_user.username,
+                created_at=datetime.now(timezone.utc),
+            )
+            session.add(user)
+            await session.commit()
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=name, callback_data=f"set_lang_{code}")]
+            for code, name in LANGUAGE_OPTIONS.items()
+        ]
+    )
+    await message.answer("👋 欢迎使用，请选择语言：", reply_markup=keyboard)
+
 
 @router.message(F.text == "你好")
 async def handle_hello(message: Message):
     await message.answer("你也好")
-    
+
+
+def setup_profile_handlers(router: Router) -> None:
+
+    @router.message(lambda m: m.text == "profile")
+    async def profile_info(message: Message):
+        await message.answer("这是你的个人信息。")
