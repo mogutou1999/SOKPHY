@@ -1,63 +1,58 @@
+# handlers/carts.py
 import logging
-from aiogram import Router, types, F
+from aiogram import Router, types, Dispatcher
 from aiogram.filters import Command, CommandObject
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from db.models import CartItem, Product
+from decimal import Decimal
+
+from db.models import CartItem
 from utils.decorators import db_session, handle_errors
-from config.settings import settings
-from aiogram.types import Message
+from services.carts import CartService
 
 logger = logging.getLogger(__name__)
 router = Router()
 
 
-ADMIN_IDS = settings.admin_ids
-
-
-def is_admin(user_id: int) -> bool:
-    return user_id in ADMIN_IDS
-
-
-def setup_cart_handlers(router: Router) -> None:
-    cart_router = Router()
-
-    @cart_router.message(F.text == "/cart")
-    async def handle_cart(message: Message) -> None:
-        await message.answer("✅ Carts handler: /cart 命令收到。")
-
-    router.include_router(cart_router)
+def setup_cart_handlers(router_: Router):
+    router_.include_router(router)
 
 
 @router.message(Command("cart"))
 @handle_errors
 @db_session
 async def view_cart(message: types.Message, db: AsyncSession):
-    user_id = message.from_user.id  # type: ignore[attr-defined]
+    user_id = getattr(message.from_user, "id", 0)
+    if not user_id:
+        await message.answer("⚠️ 无法获取用户ID")
+        return
 
     result = await db.execute(select(CartItem).where(CartItem.user_id == user_id))
     items = result.scalars().all()
 
     if not items:
-        await message.answer("🛒 你的购物车是空的，发送 /menu 查看商品列表。")
+        await message.answer("🛒 你的购物车是空的，发送 /products 查看商品列表。")
         return
 
-    text_lines = ["🛒 <b>你的购物车</b>:\n"]
-    total = 0.0
+    total = Decimal("0")
+    lines = ["🛒 <b>你的购物车</b>:\n"]
     for item in items:
-        subtotal = item.quantity * item.unit_price
+        subtotal = Decimal(item.unit_price) * item.quantity
         total += subtotal
-        text_lines.append(f"{item.product_name} × {item.quantity} = ¥{subtotal:.2f}")
+        lines.append(f"{item.product_name} × {item.quantity} = ¥{subtotal:.2f}")
 
-    text_lines.append(f"\n💰 <b>总计：</b> ¥{total:.2f}")
-    await message.answer("\n".join(text_lines), parse_mode="HTML")
+    lines.append(f"\n💰 <b>总计：</b> ¥{total:.2f}")
+    await message.answer("\n".join(lines), parse_mode="HTML")
 
 
 @router.message(Command("add"))
 @handle_errors
 @db_session
 async def add_to_cart(message: types.Message, command: CommandObject, db: AsyncSession):
-    user_id = message.from_user.id  # type: ignore[attr-defined]
+    if not message.from_user:
+        await message.answer("⚠️ 无法获取用户信息")
+        return
+    user_id = message.from_user.id
     args = command.args.split() if command.args else []
 
     try:
@@ -71,32 +66,10 @@ async def add_to_cart(message: types.Message, command: CommandObject, db: AsyncS
         )
         return
 
-    product = await db.get(Product, product_id)
-    if not product:
-        await message.answer("❌ 没有找到该商品。")
-        return
-
-    result = await db.execute(
-        select(CartItem).where(
-            CartItem.user_id == user_id, CartItem.product_id == product_id
-        )
+    msg = await CartService.add_product_to_cart(
+        db=db, user_id=user_id, product_id=product_id, quantity=quantity
     )
-    cart_item = result.scalar_one_or_none()
-
-    if cart_item:
-        cart_item.quantity += quantity
-    else:
-        cart_item = CartItem(
-            user_id=user_id,
-            product_id=product.id,
-            product_name=product.name,
-            quantity=quantity,
-            unit_price=product.price,
-        )
-        db.add(cart_item)
-
-    await db.commit()
-    await message.answer(f"✅ 已添加 {product.name} × {quantity} 到购物车。")
+    await message.answer(msg)
 
 
 @router.message(Command("remove"))
@@ -105,9 +78,12 @@ async def add_to_cart(message: types.Message, command: CommandObject, db: AsyncS
 async def remove_from_cart(
     message: types.Message, command: CommandObject, db: AsyncSession
 ):
-    user_id = message.from_user.id  # type: ignore[attr-defined]
-    args = command.args.split() if command.args else []
+    user_id = getattr(message.from_user, "id", 0)
+    if not user_id:
+        await message.answer("⚠️ 无法获取用户ID")
+        return
 
+    args = command.args.split() if command.args else []
     if not args:
         await message.answer("用法：/remove <商品ID>")
         return
