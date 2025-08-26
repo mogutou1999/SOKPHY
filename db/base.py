@@ -3,8 +3,14 @@ import uuid
 from datetime import datetime, timezone
 from sqlalchemy.orm import Mapped, DeclarativeBase, mapped_column
 from sqlalchemy import String
+from typing import Annotated
+from sqlalchemy import String, DateTime, func
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+import enum
 
-from sqlalchemy import DateTime, func
+# 类型注解简化（SQLAlchemy 2.0+）
+UUID_PK = Annotated[uuid.UUID, mapped_column(primary_key=True)]
+TIMESTAMP = Annotated[datetime, mapped_column(DateTime(timezone=True))]
 
 
 # ✅ 全局 Base 定义（SQLAlchemy 2.0 风格）
@@ -14,8 +20,11 @@ class Base(DeclarativeBase):
 
 # ✅ 公用 UUIDMixin
 class UUIDMixin:
-    id: Mapped[uuid.UUID] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True
+    id: Mapped[UUID_PK] = mapped_column(
+        PG_UUID(as_uuid=True) if PG_UUID else String(36),
+        default=uuid.uuid4,
+        index=True,
+        comment="主键UUID",
     )
 
 
@@ -25,9 +34,15 @@ def utcnow() -> datetime:
 
 
 class TimestampMixin:
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow
+    created_at: Mapped[TIMESTAMP] = mapped_column(
+        server_default=func.now(),  # 使用数据库时间而非应用时间
+        nullable=False,
+        comment="创建时间(UTC)",
     )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+
+    updated_at: Mapped[TIMESTAMP] = mapped_column(
+        server_default=func.now(),
+        onupdate=func.now(),  # 自动更新
+        nullable=False,
+        comment="最后更新时间(UTC)",
     )
