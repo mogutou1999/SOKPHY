@@ -39,7 +39,7 @@ async def lifespan(app: FastAPI):
     settings: AppSettings = get_app_settings()
     await settings.refresh()
     app.state.settings = settings
-    print(f"🚀 Running ENV: {settings.env}")
+    logger.info(f"🚀 Running ENV: {settings.env}")
 
     # 2. Redis
     redis = await RedisService.get_redis()
@@ -136,7 +136,7 @@ async def add_to_cart(
         "cart_item_id": cart_item.id,
         "product_name": cart_item.product_name,
         "quantity": cart_item.quantity,
-        "unit_price": cart_item.unit_price,
+        "unit_price": str(cart_item.unit_price),
     }
 
 
