@@ -1,4 +1,4 @@
-import os
+# services/payment.py
 import asyncio
 import logging
 from io import BytesIO
@@ -8,49 +8,43 @@ from qrcode.constants import ERROR_CORRECT_L
 from aiogram import Router
 from aiogram.types import Message, BufferedInputFile
 from aiogram.filters import Command
-from dotenv import load_dotenv
 
 from config.settings import get_app_settings, settings
-from db.session import get_async_session
+from db.session import async_session_maker
 
-load_dotenv()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG if settings.env != "prod" else logging.INFO)
 
 router = Router()
 
-API_TOKEN = os.getenv("BOT_TOKEN")
-if not API_TOKEN:
-    raise ValueError("❌ 未设置 BOT_TOKEN，请检查 .env 文件")
-
 
 # ──────────────────────────────
 # ✅ 支付服务类
 # ──────────────────────────────
-
-
 class PaymentService:
     def __init__(self, api_key: str, sandbox: bool = True):
         self.api_key = api_key
         self.sandbox = sandbox
 
-    async def pay(self, amount: float) -> dict:
-        logger.info(f"💰 Paying ${amount} using API key: {self.api_key[:4]}...")
-        await self.simulate_gateway_call(amount)
-        return {"status": "success", "amount": amount}
+    async def pay(self, total_amount: float) -> dict:
+        logger.info(f"💰 Paying ${total_amount} using API key: {self.api_key[:4]}...")
+        await self.simulate_gateway_call(total_amount)
+        return {"status": "success", "total_amount": total_amount}
 
-    async def simulate_gateway_call(self, amount: float):
+    async def simulate_gateway_call(self, total_amount: float):
         await asyncio.sleep(1)
-        logger.info(f"✅ 已完成第三方支付: ${amount}")
+        logger.info(f"✅ 已完成第三方支付: ${total_amount}")
 
-    async def create_payment(self, amount: float, currency: str = "USD") -> dict:
-        logger.info(f"Creating payment: amount={amount}, currency={currency}")
+    async def create_payment(self, total_amount: float, currency: str = "USD") -> dict:
+        logger.info(
+            f"Creating payment: total_amount={total_amount}, currency={currency}"
+        )
         if self.sandbox:
             logger.info("Sandbox mode: Skipping real API call.")
-            return {"status": "success", "sandbox": True, "amount": amount}
+            return {"status": "success", "sandbox": True, "total_amount": total_amount}
         else:
             logger.info("Calling real payment API...")
-            return {"status": "success", "sandbox": False, "amount": amount}
+            return {"status": "success", "sandbox": False, "total_amount": total_amount}
 
     async def verify_payment(self, payment_id: str) -> dict:
         logger.info(f"Verifying payment_id={payment_id}")
@@ -60,12 +54,8 @@ class PaymentService:
 # ──────────────────────────────
 # ✅ 工厂函数，生产 PaymentService
 # ──────────────────────────────
-
-
 async def get_payment_service() -> PaymentService:
-    # ❗️ 如果 get_app_settings() 是同步的，就别 await
-    settings_obj = get_app_settings()
-    return PaymentService(api_key=settings_obj.payment_api_key, sandbox=True)
+    return PaymentService(api_key=settings.payment_api_key, sandbox=True)
 
 
 # ──────────────────────────────
@@ -96,8 +86,6 @@ async def generate_payment_qr(payment_url: str) -> BytesIO:
 # ──────────────────────────────
 # ✅ 调用后端拿支付链接
 # ──────────────────────────────
-
-
 async def get_payment_link(order_id: int) -> str:
     api_url = f"{settings.payment_api_base}/{order_id}"
     async with aiohttp.ClientSession() as session:
