@@ -1,14 +1,50 @@
 # utils/formatting.py
-
 from datetime import datetime
-
-from typing import Any, Dict, Optional
+import logging
+from typing import Any, Dict, Optional, Union, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field, field_validator
-from db.models import Product, Order
+from db.models import Product, Order, OrderStatus
+from aiogram.types import (
+    Message,
+    CallbackQuery,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    ReplyKeyboardMarkup,
+)
 
 
-# === 工具函数 ===
+def format_product_list(products: List[Dict]) -> str:
+    """
+    将商品列表格式化成字符串，用于发送给 Telegram 用户
+    products: [{'id': 1, 'name': 'xxx', 'price': 10.0, 'stock': 5}, ...]
+    """
+    if not products:
+        return "📦 当前没有商品。"
+
+    lines = ["📦 <b>商品列表</b>:\n"]
+    for p in products:
+        lines.append(
+            f"ID: {p['id']} | 名称: {p['name']} | 价格: ¥{p['price']} | 库存: {p['stock']}"
+        )
+    return "\n".join(lines)
+
+
+def format_datetime(dt: Optional[datetime]) -> str:
+    if not dt:
+        return "-"
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def format_order_status(status: OrderStatus) -> str:
+    mapping = {
+        "pending": "⌛ 待支付",
+        "paid": "✅ 已支付",
+        "shipped": "📦 已发货",
+        "refunded": "💸 已退款",
+        "cancelled": "❌ 已取消",
+    }
+    return mapping.get(status.value, f"❓ 未知状态: {status.value}")
 
 
 def format_product_detail(product: Product) -> str:
@@ -30,18 +66,77 @@ def format_order_detail(order: Order) -> str:
     )
 
 
-def format_order_status(status: str) -> str:
-    mapping = {
-        "PENDING": "⌛ 待支付",
-        "PAID": "✅ 已支付",
-        "SHIPPED": "📦 已发货",
-        "REFUNDED": "💸 已退款",
-    }
-    return mapping.get(status, f"❓ 未知状态: {status}")
+# ===============================
+# 📌 5️⃣ 安全回复工具
+# ===============================
+
+ReplyMarkup = Union[ReplyKeyboardMarkup, InlineKeyboardMarkup]
 
 
-def format_datetime(dt: datetime) -> str:
-    return dt.strftime("%Y-%m-%d %H:%M")
+async def _safe_reply(
+    event: Union[Message, CallbackQuery],
+    text: str,
+    reply_markup: Optional[Union[InlineKeyboardMarkup, ReplyKeyboardMarkup]] = None,
+    show_alert: bool = False,
+) -> None:
+    try:
+        if isinstance(event, Message):
+            await event.answer(text, reply_markup=reply_markup)
+        elif isinstance(event, CallbackQuery):
+            msg = getattr(event, "message", None)
+            if isinstance(msg, Message) and (
+                reply_markup is None or isinstance(reply_markup, InlineKeyboardMarkup)
+            ):
+
+                try:
+                    await msg.edit_text(text, reply_markup=reply_markup)
+                except Exception:
+                    await event.answer(text, show_alert=show_alert)
+            else:
+                # 如果 message 不可访问或者 reply_markup 是 ReplyKeyboardMarkup，用 answer
+                await event.answer(text, show_alert=show_alert)
+    except Exception:
+        logging.exception("❌ _safe_reply 执行失败")
+
+
+# ===============================
+# 📌 6️⃣ 菜单生成工具
+# ===============================
+
+
+async def build_product_menu(products: list) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup(inline_keyboard=[])
+    for p in products:
+        kb.inline_keyboard.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{p['name']} ￥{p['price']}",
+                    callback_data=f"product_detail:{p['id']}",
+                )
+            ]
+        )
+    return kb
+
+
+async def build_product_detail_kb(product_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🛒 立即购买", callback_data=f"buy:{product_id}"
+                )
+            ],
+            [InlineKeyboardButton(text="🔙 返回菜单", callback_data="open_menu")],
+        ]
+    )
+
+
+async def build_pay_kb(order_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="💳 去支付", callback_data=f"pay:{order_id}")]
+        ]
+    )
 
 
 # === 配置模型 ===
