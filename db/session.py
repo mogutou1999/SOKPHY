@@ -1,16 +1,12 @@
 # db/session.py
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-
 from sqlalchemy.exc import SQLAlchemyError
 from typing import AsyncGenerator
-
-
 from sqlalchemy import text
 from contextlib import asynccontextmanager
 from config.settings import AppSettings, settings
 import logging
 from db.base import Base
-
 
 DATABASE_URL = "sqlite+aiosqlite:///./test.db"
 
@@ -29,7 +25,8 @@ async def init_db():
 
 @asynccontextmanager
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
-    async with async_session_maker() as session:
+    """提供 async with 的安全会话"""
+    async with async_session_maker() as session:  # 正确调用实例
         yield session
 
 
