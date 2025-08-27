@@ -35,7 +35,8 @@ watchfiles==0.21.0
 # === 📑 日志 / 配置 ===
 structlog==24.1.0
 loguru==0.7.2
-pydantic-settings==2.2.1
+pydantic==2.8.2
+pydantic-settings==2.5.2
 python-dotenv==1.0.1
 
 # === 🧪 开发调试 ===
