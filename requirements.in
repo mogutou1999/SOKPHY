@@ -11,7 +11,7 @@ sqlalchemy==2.0.30  # 含 async API
 asyncpg==0.29.0     # PostgreSQL async
 aiosqlite==0.20.0   # SQLite async
 greenlet==3.0.3     # 必须！SQLAlchemy async 依赖
-alembic==1.13.2   # 数据库迁移工具
+alembic==1.13.2     # 数据库迁移工具
 arq==0.26.3         # Redis 异步任务队列
 
 # === 🔑 安全认证 / 加密 ===
@@ -48,5 +48,5 @@ debugpy==1.8.1
 celery[redis]==5.3.6
 uvloop==0.19.0
 redis==5.3.1
-qrcode>=7.4 
+qrcode[pil]==7.4.2
 Pillow>=10.0.0 
