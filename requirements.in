@@ -1,7 +1,7 @@
 
 # === 🟢 核心框架 ===
 fastapi==0.111.0
-uvicorn[standard]==0.29.2
+uvicorn[standard]==0.30.6
 
 # === 🤖 Telegram Bot ===
 aiogram==3.12.0
