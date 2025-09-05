@@ -1,0 +1,33 @@
+{
+  "devDependencies": {
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.8",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.12"
+  },
+  "status": 200,
+  "features_count": 516,
+  "features": [
+    {"id": 1, "name": "商品管理", "description": "管理员可添加/删除/修改商品"},
+    {"id": 2, "name": "订单管理", "description": "用户下单、支付、查看订单"},
+    {"id": 3, "name": "用户管理", "description": "管理员可管理用户信息"},
+    {"id": 4, "name": "支付系统", "description": "支持支付宝、微信等支付方式"}
+  ],
+  "products": [
+    {
+      "id": "1",
+      "name": "商品1",
+      "price": 100.0,
+      "stock": 10,
+      "description": "描述1"
+    },
+    {
+      "id": "2",
+      "name": "商品2",
+      "price": 200.0,
+      "stock": 5,
+      "description": "描述2"
+    }
+  ]
+}
