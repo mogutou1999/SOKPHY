@@ -8,7 +8,6 @@ import asyncio
 
 logger = logging.getLogger(__name__)
 
-
 async def send_message_safe(
     bot: Bot,
     user_id: int,
@@ -34,7 +33,6 @@ async def send_message_safe(
     except Exception as e:
         logger.exception(f"[messaging] 未知异常 user_id={user_id} error={e}")
         return False
-
 
 async def broadcast_message(
     bot: Bot,
