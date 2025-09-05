@@ -8,13 +8,19 @@ logger = logging.getLogger(__name__)
 
 # 单例
 _settings: Optional[AppSettings] = None
+_settings_lock = asyncio.Lock()
+
 
 async def get_app_settings() -> AppSettings:
     global _settings
     if _settings is None:
-        _settings = AppSettings()
-        await _settings.refresh()
+        async with _settings_lock:
+            if _settings is None:  # 双重检查
+                _settings = AppSettings()
+                await _settings.refresh()
+                logger.info("✅ AppSettings 已初始化")
     return _settings
+
 
 async def try_load_vault_settings() -> AppSettings:
     """
@@ -24,12 +30,14 @@ async def try_load_vault_settings() -> AppSettings:
 
     current = await get_app_settings()
 
-    vault_ready = all([
-        current.vault_enabled,
-        current.vault_addr,
-        current.vault_token,
-        current.vault_secret_path
-    ])
+    vault_ready = all(
+        [
+            current.vault_enabled,
+            current.vault_addr,
+            current.vault_token,
+            current.vault_secret_path,
+        ]
+    )
 
     if not vault_ready:
         logger.info("ℹ️ Vault 条件不满足，跳过加载")
@@ -40,7 +48,7 @@ async def try_load_vault_settings() -> AppSettings:
             vault_url=current.vault_addr,
             vault_token=current.vault_token,
             secret_path=current.vault_secret_path,
-            env=current.env
+            env=current.env,
         )
         if new_settings:
             _settings = new_settings
@@ -49,14 +57,20 @@ async def try_load_vault_settings() -> AppSettings:
         else:
             logger.warning("⚠️ Vault 返回空配置，使用原配置")
     except Exception as e:
-        logger.exception(f"❌ Vault 配置加载异常: {e}")
+        logger.warning(f"❌ Vault 配置加载异常: {e}")
 
     return current
+
+
 async def periodic_refresh(settings: AppSettings, interval: int = 60):
-    while True:
-        try:
-            await settings.refresh()
-            logger.info("🔁 配置刷新完成")
-        except Exception as e:
-            logger.exception(f"刷新配置失败: {e}")
-        await asyncio.sleep(interval)
+    try:
+        while True:
+            try:
+                await settings.refresh()
+                logger.info("🔁 配置刷新完成")
+            except Exception as e:
+                logger.warning(f"刷新配置失败: {e}")
+            await asyncio.sleep(interval)
+    except asyncio.CancelledError:
+        logger.info("⏹️ 配置刷新任务已取消")
+        raise
