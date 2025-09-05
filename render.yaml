@@ -1,16 +1,12 @@
 services:
   - type: web
-    name: my-fastapi-bot
+    name: my-web-service
     env: python
-    plan: free
-
     buildCommand: |
-      # 解决 Rust 只读文件系统问题（maturin依赖）
-      export CARGO_HOME=$HOME/.cargo
-      export RUSTUP_HOME=$HOME/.rustup
+      export CARGO_HOME=/opt/render/project/.cargo
+      export RUSTUP_HOME=/opt/render/project/.rustup
       pip install maturin
-
-      
+      pip install .
 
       # 升级 pip/wheel/maturin
       pip install --upgrade pip setuptools wheel maturin
@@ -28,11 +24,11 @@ services:
       uvicorn main:app --host 0.0.0.0 --port $PORT
 
     envVars:
-      - key: ENV
-        value: production
-      - key: LOG_LEVEL
-        value: INFO
-
+      - key: CARGO_HOME
+        value: /opt/render/project/.cargo
+      - key: RUSTUP_HOME
+        value: /opt/render/project/.rustup
+        
       # 数据库
       - key: DATABASE_URL
         sync: false
