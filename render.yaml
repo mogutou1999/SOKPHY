@@ -3,35 +3,33 @@ services:
     name: my-fastapi-bot
     env: python
     plan: free
-    buildCommand: "pip install --no-cache-dir -r requirements.txt"
+    buildCommand: |
+      # 设置 Rust 缓存到用户目录
+      export CARGO_HOME=$HOME/.cargo
+      export RUSTUP_HOME=$HOME/.rustup
+
+      # 升级 pip、setuptools、wheel、maturin
+      pip install --upgrade pip setuptools wheel maturin
+
+      # 安装依赖
+      pip install --no-cache-dir -r requirements.txt
     startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
     envVars:
-      # 基础配置
       - key: ENV
         value: production
-      - key: BASE_URL
-        value: "https://your-app-name.onrender.com"
       - key: LOG_LEVEL
         value: INFO
-      - key: DEBUG
-        value: "false"
-
-      # 数据库 & Redis
       - key: DATABASE_URL
         sync: false
       - key: REDIS_URL
         sync: false
-
-      # Telegram Bot
       - key: BOT_TOKEN
         sync: false
       - key: BOT_ADMINS
         sync: false
-
-      # 支付配置
-      - key: PAYMENT_API_BASE
-        value: "https://api.alipay.com/v1"
-      - key: PAYMENT_API_KEY
-        sync: false
       - key: PAYMENT_SANDBOX
         value: "false"
+      - key: PAYMENT_API_KEY
+        sync: false
+      - key: PAYMENT_API_BASE
+        value: "https://api.alipay.com/v1"
