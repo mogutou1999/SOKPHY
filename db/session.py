@@ -1,32 +1,35 @@
 # db/session.py
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+
 from sqlalchemy.exc import SQLAlchemyError
 from typing import AsyncGenerator
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from contextlib import asynccontextmanager
-from config.settings import AppSettings, settings
+from config.settings import AppSettings, settings,get_app_settings
 import logging
+import asyncio
 from db.base import Base
 
-DATABASE_URL = "sqlite+aiosqlite:///./test.db"
+logger = logging.getLogger(__name__)
+settings = get_app_settings()
+
+DATABASE_URL = "postgresql+asyncpg://wuye:mypassword@localhost:5432/sokphy"
 
 engine = create_async_engine(DATABASE_URL, echo=True)
 
+# 创建 sessionmaker
 async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
 
-logger = logging.getLogger(__name__)
 
-
-async def init_db():
+async def init_models():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    # 提供异步数据库会话（依赖注入、事务管理推荐用法）
+    logger.info("✅ 数据库表已创建/检查完成")
 
-
+# 异步上下文管理器
 @asynccontextmanager
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
-    """提供 async with 的安全会话"""
-    async with async_session_maker() as session:  # 正确调用实例
+    async with async_session_maker() as session:
         yield session
 
 
@@ -42,7 +45,12 @@ async def health_check() -> bool:
         return False
 
 
-# 关闭连接池（建议在 shutdown 时调用）
+
 async def close_connections():
     await engine.dispose()
     logger.info("🔌 数据库连接池已关闭")
+
+    
+
+if __name__ == "__main__":
+    asyncio.run(health_check())
