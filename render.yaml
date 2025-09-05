@@ -49,3 +49,8 @@ services:
         sync: false
       - key: PAYMENT_API_BASE
         value: "https://api.alipay.com/v1"
+
+      - key: CARGO_HOME
+      value: /opt/render/project/.cargo
+      - key: RUSTUP_HOME
+      value: /opt/render/project/.rustup  
