@@ -4,32 +4,53 @@ services:
     env: python
     plan: free
     buildCommand: |
-      # 设置 Rust 缓存到用户目录
+      # 设置 Rust 写入路径，解决只读文件系统问题
       export CARGO_HOME=$HOME/.cargo
       export RUSTUP_HOME=$HOME/.rustup
 
-      # 升级 pip、setuptools、wheel、maturin
+      # 升级 pip/wheel/maturin
       pip install --upgrade pip setuptools wheel maturin
 
       # 安装依赖
       pip install --no-cache-dir -r requirements.txt
-    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
+
+      # 打包前端
+      cd frontend
+      npm install
+      npm run build
+      cd ..
+
+    startCommand: |
+      uvicorn main:app --host 0.0.0.0 --port $PORT
+
     envVars:
+      # 通用环境
       - key: ENV
         value: production
       - key: LOG_LEVEL
         value: INFO
+
+      # 数据库
       - key: DATABASE_URL
-        sync: false
+        sync: false  # 避免泄露
       - key: REDIS_URL
         sync: false
+
+      # Telegram Bot
       - key: BOT_TOKEN
         sync: false
       - key: BOT_ADMINS
         sync: false
+      - key: DEFAULT_LANG
+        value: zh
+
+      # 支付
       - key: PAYMENT_SANDBOX
-        value: "false"
+        value: false
       - key: PAYMENT_API_KEY
         sync: false
       - key: PAYMENT_API_BASE
         value: "https://api.alipay.com/v1"
+
+  # 可选：静态前端直接挂载（如果想让 FastAPI 提供前端）
+  # 在 main.py 中已经写了 app.mount("/", StaticFiles(...))，无需额外服务
