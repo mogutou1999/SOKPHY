@@ -1,8 +1,8 @@
 # config/settings.py
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator
-from typing import List
-from typing import Optional
+from typing import List,Optional
+
 import json
 import logging
 import httpx
@@ -15,21 +15,23 @@ logger = logging.getLogger(__name__)
 
 class AppSettings(BaseSettings):
     env: str = Field(default="dev", alias="ENV", description="运行环境(dev/test/prod)")
-    redis_url: str = Field(default="redis://localhost:6379")
+    redis_url: str = Field(default="redis://localhost:6379", alias="REDIS_URL")
     vault_enabled: bool = Field(default=False)
     vault_addr: str = Field(default="http://localhost:8200")
     vault_token: str = Field(default="")
     vault_secret_path: str = Field(default="secret/data/myapp")
     payment_api_key: str = Field(default="test-key")
     payment_sandbox: bool = Field(default=True, alias="PAYMENT_SANDBOX")
-    database_url: str = Field(
-        default="postgresql+asyncpg://YOUR_USER:YOUR_PASS@YOUR_HOST:5432/YOUR_DB"
-    )
-    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
-    bot_token: str = Field(..., alias="BOT_TOKEN")
-    payment_api_base: Optional[str] = Field(None, alias="PAYMENT_API_BASE")
+    payment_api_base: Optional[str] = Field(default="https://example.com/pay", alias="PAYMENT_API_BASE")
+    stripe_api_key: str = Field(default="", alias="STRIPE_API_KEY")
+    stripe_webhook_secret: str = Field(default="", alias="STRIPE_WEBHOOK_SECRET")
+    currency: str = Field(default="USD", alias="CURRENCY")
+    database_url: Optional[str] = Field(default="sqlite:///default.db", alias="DATABASE_URL")
 
+    bot_token: str = Field(default="test-bot-token", alias="BOT_TOKEN")
     BOT_ADMINS: str = Field(default="", alias="BOT_ADMINS")
+    default_lang: str = "zh"
+    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
     @field_validator("log_level", mode="before")
     def validate_log_level(cls, v):
@@ -48,10 +50,9 @@ class AppSettings(BaseSettings):
         extra="forbid",
     )
 
-    model_config = SettingsConfigDict(env_file=".env", extra="forbid")
-
     async def load_redis_config(self) -> None:
-        """从 Redis 拉配置"""
+        """从 Redis 拉配置（连不上则跳过）"""
+        redis = None
         try:
             redis = await Redis.from_url(self.redis_url)
             raw = await redis.get(f"config:{self.env}")
@@ -62,7 +63,7 @@ class AppSettings(BaseSettings):
             await self.update_from_dict(data)
             logger.info("Redis 配置加载成功")
         except RedisError as e:
-            logger.error(f"Redis 异常: {e}")
+            logger.warning(f"Redis 不可用，跳过加载: {e}")
         except Exception as e:
             logger.exception(f"未知错误: {e}")
         finally:
@@ -116,10 +117,11 @@ class AppSettings(BaseSettings):
 
 
 settings = AppSettings()
+
 print(settings.payment_api_key)  # "abc123"
 print(settings.payment_sandbox)  # False
 print(settings.payment_api_base)  # "https://example.com/pay"
 
 
 def get_app_settings() -> AppSettings:
-    return settings
+    return AppSettings()
