@@ -6,8 +6,10 @@ services:
 
     buildCommand: |
       # 解决 Rust 只读文件系统问题（maturin依赖）
-      export CARGO_HOME=$HOME/.cargo
-      export RUSTUP_HOME=$HOME/.rustup
+      export CARGO_HOME="$HOME/.cargo"
+      export RUSTUP_HOME="$HOME/.rustup"
+
+      pip install maturin
 
       # 升级 pip/wheel/maturin
       pip install --upgrade pip setuptools wheel maturin
