@@ -44,7 +44,6 @@ async def request_verification(target: str, is_email: bool = False):
         await send_sms(target, code)
     return code
 
-
 # 验证流程：检查并更新用户状态
 async def confirm_verification(
     session: AsyncSession,
