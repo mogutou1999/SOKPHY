@@ -3,22 +3,35 @@ services:
     name: my-fastapi-bot
     env: python
     plan: free
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python -m uvicorn main:app --host 0.0.0.0 --port $PORT"
+    buildCommand: "pip install --no-cache-dir -r requirements.txt"
+    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
     envVars:
-      - key: BASE_URL
-        value: "https://sokphy.onrender.com"
+      # 基础配置
       - key: ENV
         value: production
+      - key: BASE_URL
+        value: "https://your-app-name.onrender.com"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: DEBUG
+        value: "false"
+
+      # 数据库 & Redis
       - key: DATABASE_URL
-        value: "postgresql+asyncpg://<USERNAME>:<PASSWORD>@<HOST>:<PORT>/<DBNAME>"
+        sync: false
       - key: REDIS_URL
-        value: "redis://default:<PASSWORD>@<HOST>:6379/0"
+        sync: false
+
+      # Telegram Bot
+      - key: BOT_TOKEN
+        sync: false
+      - key: BOT_ADMINS
+        sync: false
+
+      # 支付配置
       - key: PAYMENT_API_BASE
         value: "https://api.alipay.com/v1"
-      - key: BOT_ADMINS
-        value: "123456,654321"
-      - key: BOT_TOKEN
-        value: "YOUR_TELEGRAM_BOT_TOKEN"
-      - key: LOG_LEVEL
-        value: "info"
+      - key: PAYMENT_API_KEY
+        sync: false
+      - key: PAYMENT_SANDBOX
+        value: "false"
