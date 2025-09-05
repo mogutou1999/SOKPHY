@@ -1,11 +1,11 @@
+# handlers/decorators.py
 import functools
 import logging
 import asyncio
 import time
 from typing import Callable, Any, Coroutine, TypeVar, Union, Optional, cast, Sequence
 from contextlib import suppress
-from datetime import datetime
-
+from datetime import datetime, timezone
 from aiogram.types import (
     Message,
     CallbackQuery,
@@ -13,13 +13,13 @@ from aiogram.types import (
     InlineKeyboardButton,
     User,
 )
-from aiogram import Bot, Router, F
+from utils.formatting import _safe_reply
+from aiogram import Bot, Router
 from aiogram.filters import Command
-from aiogram.exceptions import TelegramBadRequest
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from db.models import User as Users
-from db.session import async_session_maker, get_async_session
+from db.session import  get_async_session
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -31,9 +31,26 @@ ADMIN_IDS = getattr(settings, "admin_ids", [])
 P = TypeVar("P")
 R = TypeVar("R")
 
+def db_session(
+    func: Callable[..., Coroutine[Any, Any, R]],
+) -> Callable[..., Coroutine[Any, Any, R]]:
+    """自动创建 AsyncSession"""
+
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs) -> R:
+        db: Optional[AsyncSession] = kwargs.get("db")
+        if db is None:
+            async with get_async_session() as session:
+                kwargs["db"] = session
+                return await func(*args, **kwargs)
+        else:
+            return await func(*args, **kwargs)
+
+    return wrapper
+
 
 async def db_check_is_admin(user_id: int) -> bool:
-    async with async_session_maker() as session:
+    async with get_async_session() as session:
         result = await session.execute(
             select(Users.is_admin).where(Users.telegram_id == user_id)
         )
@@ -42,11 +59,11 @@ async def db_check_is_admin(user_id: int) -> bool:
 
 
 async def test():
-    start = datetime.now()
+    start = datetime.now(timezone.utc)
     # 模拟100次并发调用
     tasks = [handle_start(message=..., db=...) for _ in range(100)]
     await asyncio.gather(*tasks)
-    print(f"耗时: {(datetime.now() - start).total_seconds():.2f}s")
+    print(f"耗时: {(datetime.now(timezone.utc) - start).total_seconds():.2f}s")
 
 
 # --- 核心装饰器 ---
@@ -98,14 +115,14 @@ def user_required(
                     if not await get_or_create_user(db, user):
                         await safe_reply(event, "⚠️ 请先使用 /start 注册")
                         return None
-                except Exception as e:
+                except ValueError as e:
                     logger.error(f"[user_required] 注册检查失败: {e}")
                     await safe_reply(event, "⚠️ 系统错误，请稍后再试")
                     return None
 
             try:
                 return await handler(*args, **kwargs)
-            except Exception as e:
+            except ValueError as e:
                 logger.exception(f"[user_required] Handler 执行异常: {e}")
                 await safe_reply(event, "⚠️ 系统异常，请联系管理员")
                 return None
@@ -145,27 +162,26 @@ async def safe_reply(event: Union[Message, CallbackQuery], text: str, **kwargs):
             # 回复消息文本
             if event.message:
                 message = cast(Message, event.message)  # 显式转换为 Message 类型
-                await message.answer(text, **kwargs)
+                await _safe_reply(message,text, **kwargs)
             # 回答回调，防止 loading 圈圈
             with suppress(Exception):
                 await event.answer()
-    except Exception as e:
+    except ValueError as e:
         logger.warning(f"[safe_reply] 消息发送失败: {e}")
-
 
 # --- 路由处理器示例 ---
 @router.message(Command("start"))
+@db_session
 @user_required(check_registration=False)
 async def handle_start(message: Message, db: AsyncSession, bot: Bot) -> None:
     from handlers.auth import get_or_create_user  # 延迟导入，避免循环依赖
 
     user = cast(User, message.from_user)
     
-
     # 创建用户记录
     new_user = await get_or_create_user(db, user)
     if not new_user:
-        await message.answer("❌ 注册失败，请重试")
+        await _safe_reply(message,"❌ 注册失败，请重试")
         return
 
     # 构建响应
@@ -177,11 +193,10 @@ async def handle_start(message: Message, db: AsyncSession, bot: Bot) -> None:
 
     markup = InlineKeyboardMarkup(inline_keyboard=buttons)
 
-    await message.answer(
+    await _safe_reply(message,
         f"👋 欢迎 {user.full_name}！",
         reply_markup=markup,
     )
-
 
 def handle_errors(
     func: Callable[..., Coroutine[Any, Any, R]],
@@ -192,7 +207,7 @@ def handle_errors(
     async def wrapper(*args, **kwargs) -> Optional[R]:
         try:
             return await func(*args, **kwargs)
-        except Exception as e:
+        except ValueError as e:
             logger.exception(f"[handle_errors] Handler 出错: {e}")
             for arg in args:
                 if hasattr(arg, "answer"):
@@ -202,19 +217,3 @@ def handle_errors(
     return wrapper
 
 
-def db_session(
-    func: Callable[..., Coroutine[Any, Any, R]],
-) -> Callable[..., Coroutine[Any, Any, R]]:
-    """自动创建 AsyncSession"""
-
-    @functools.wraps(func)
-    async def wrapper(*args, **kwargs) -> R:
-        db: Optional[AsyncSession] = kwargs.get("db")
-        if db is None:
-            async with get_async_session() as session:
-                kwargs["db"] = session
-                return await func(*args, **kwargs)
-        else:
-            return await func(*args, **kwargs)
-
-    return wrapper
