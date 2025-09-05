@@ -1,12 +1,14 @@
+# migrations/env.py
 from logging.config import fileConfig
 import asyncio
-from sqlalchemy import engine_from_config, pool
 from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy import pool
+from db.base import Base 
 from config.settings import get_app_settings
-from db.models import Base
 from alembic import context
 from sqlalchemy.engine import Connection
-
+from db.models import Base 
+target_metadata = Base.metadata
 # -----------------------------
 # 配置 Alembic logging
 # -----------------------------
@@ -18,7 +20,7 @@ if config.config_file_name is not None:
 # 读取项目配置
 # -----------------------------
 settings = get_app_settings()
-DATABASE_URL = "postgresql+asyncpg://wuye:@localhost:5432/wuye"
+DATABASE_URL: str = settings.database_url or "sqlite+aiosqlite:///default.db"
 # -----------------------------
 # 绑定 MetaData
 # -----------------------------
@@ -34,12 +36,12 @@ def get_async_engine():
 # 同步运行迁移（offline）
 # -----------------------------
 def run_migrations_offline():
-    url = DATABASE_URL
     context.configure(
-        url=url,
+        url=DATABASE_URL,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        compare_type=True,
     )
 
     with context.begin_transaction():
@@ -48,16 +50,23 @@ def run_migrations_offline():
 # -----------------------------
 # 异步迁移（online）
 # -----------------------------
+def do_run_migrations(connection: Connection):
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_type=True,
+    )
+    with context.begin_transaction():
+        context.run_migrations()
+
 async def run_migrations_online():
-    connectable = create_async_engine(DATABASE_URL, future=True)
+    connectable = create_async_engine(
+        DATABASE_URL, poolclass=pool.NullPool, future=True
+    )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
     await connectable.dispose()
 
-def do_run_migrations(connection: Connection):
-    context.configure(connection=connection, target_metadata=target_metadata)
-    with context.begin_transaction():
-        context.run_migrations()
 
 # -----------------------------
 # 入口
