@@ -2,7 +2,6 @@
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy.orm import Mapped, DeclarativeBase, mapped_column
-from sqlalchemy import String
 from typing import Annotated
 from sqlalchemy import String, DateTime, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
