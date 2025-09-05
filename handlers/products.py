@@ -1,252 +1,297 @@
 # handlers/products.py
 import logging
-from aiogram import Router, types, F
+from aiogram import Router, types,F
 from aiogram.filters import Command
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from decimal import Decimal
 from db.session import get_async_session,settings
-from db.models import Product, User, Order, OrderItem, CartItem
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from utils.decorators import handle_errors, db_session
-from db.crud import ProductCRUD
+from db.models import Product, User
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Message, BufferedInputFile
+from utils.decorators import handle_errors, db_session,user_required
+from db.crud import ProductCRUD, OrderCRUD, CartCRUD
 from config.settings import get_app_settings
-from typing import  Any
-
+from typing import  Any,cast
+from utils.formatting import format_product_detail, _safe_reply
+from uuid import UUID
+from services.products import get_all_products, get_product_by_id
+from services.orders import create_order
+from utils.admin_session import AdminProductSession
+from handlers.payment import generate_payment_qr
+from services.payment_service import PaymentService
 logger = logging.getLogger(__name__)
 router = Router()
-settings = get_app_settings()
 admin_ids = settings.admin_ids 
-__all__ = ["router", "setup_products_handlers", "create_product"]
+# 临时存储管理员输入信息
+admin_product_data: dict[int, dict] = {}
+price_temp: dict[int, float] = {}
+stock_temp: dict[int, int] = {}
+__all__ = ["router"]
 
-async def get_product_by_id(db: AsyncSession, product_id: int) -> dict[str, Any] | None:
-    result = await db.execute(select(Product).where(Product.id == product_id))
-    product = result.scalar_one_or_none()
-    if not product:
-        return None
-    return {
-        "id": product.id,
-        "name": product.name,
-        "price": float(product.price),
-        "stock": product.stock,
-        "description": product.description,
-        "is_active": product.is_active,
-    }
 
-@router.message(Command("show_products"))
-async def show_products(msg: types.Message):
-    print("show_products triggered")
-    async with get_async_session() as session:
-        products = await ProductCRUD.list_active(session)
-        print("products:", products)
-        if not products:
-            await msg.answer("暂无商品上架")
-            return
-        for p in products:
-            keyboard = InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [
-                        InlineKeyboardButton(text="加入购物车", callback_data=f"add:{p.id}"),
-                        InlineKeyboardButton(text="立即购买", callback_data=f"buy:{p.id}"),
-                    ]
-                ]
-            )
-            await msg.answer(f"{p.name} - ¥{p.price}\n库存: {p.stock}", reply_markup=keyboard)
 
-def setup_products_handlers(dp: Router):
-    dp.include_router(router)
 
+# ----------------------------
+# 1️⃣ 管理员发送 
+# ----------------------------
 @router.message(Command("add_product"))
-@handle_errors
-@db_session
-async def add_product(message: types.Message, db: AsyncSession):
-    """
-    管理员通过 /add_product 名称|价格|库存|描述 添加商品
-    示例：
-    /add_product 商品C|29.9|20|商品C描述
-    """
+@user_required(admin_only=True)
+async def add_product_start(message: Message):
     if not message.from_user:
-        await message.answer("⚠️ 无法获取用户信息")
+        await _safe_reply(message,"⚠️ 无法获取用户信息")
         return
 
-    # 检查管理员身份
     if message.from_user.id not in settings.admin_ids:
-        await message.answer("⚠️ 你没有权限执行此操作")
+        await _safe_reply(message,"⚠️ 你没有权限执行此操作")
         return
 
-    # 解析参数
-    if not message.text or "|" not in message.text:
-        await message.answer("❌ 请提供参数: 名称|价格|库存|描述")
+    text = message.text
+    if not text or " " not in text:
+        await _safe_reply(message,"❌ 请提供商品名称（可选描述）：名称|描述")
         return
 
     try:
-        _, params = message.text.split(" ", 1)
-        name, price, stock, description = params.split("|")
-        price = float(price)
-        stock = int(stock)
-    except ValueError:
-        await message.answer("❌ 参数格式错误，请使用：名称|价格|库存|描述")
+        _, params = text.split(" ", 1)
+        parts = params.split("|")
+        name = parts[0].strip()
+        description = parts[1].strip() if len(parts) > 1 else ""
+    except Exception:
+        await _safe_reply(message,"❌ 参数格式错误，请使用：名称|可选描述")
         return
 
-    # 添加到数据库
-    product = Product(
-        name=name.strip(),
-        price=price,
-        stock=stock,
-        description=description.strip(),
-        is_active=True,
+
+    admin_product_data[message.from_user.id] = {
+        "name": name,
+        "description": description
+    }
+
+    # 构建价格选择和库存选择按钮
+    price_buttons = [
+        InlineKeyboardButton(text=f"¥{p}", callback_data=f"set_price:{name}:{p}")
+        for p in [0.5, 1, 5, 10, 20, 50, 100]
+    ]
+    stock_buttons = [
+        InlineKeyboardButton(text=f"{s}", callback_data=f"set_stock:{name}:{s}")
+        for s in [1, 5, 10, 20, 50, 100]
+    ]
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            price_buttons,
+            stock_buttons,
+        ]
     )
-    db.add(product)
-    await db.commit()
-    await db.refresh(product)
 
-    await message.answer(f"✅ 商品已添加：{product.name} ¥{product.price} 库存:{product.stock}")
-# -----------------------------
-# 创建商品（管理员用）
-# -----------------------------
-async def create_product(name: str, description: str, price: float, stock: int, session: AsyncSession):
-    product = Product(
-        name=name,
-        description=description,
-        price=price,
-        stock=stock,
-        is_active=True,
-    )
-    session.add(product)
-    await session.commit()
-    await session.refresh(product)
-    return product
+    await _safe_reply(message, f"🛠️ 添加商品：{name}\n请选择价格和库存:", reply_markup=kb)
 
-
-# -----------------------------
-# 查询全部商品
-# -----------------------------
-async def get_all_products(db: AsyncSession):
-    result = await db.execute(select(Product).where(Product.is_active == True))
-    return result.scalars().all()
-
-
-# -----------------------------
-# 查看商品列表，生成购买按钮
-# -----------------------------
-@router.message(F.text.in_({"/products", "/show_products"}))
-async def list_products(message: types.Message):
-    async with get_async_session() as session:
-        result = await session.execute(
-            select(Product).where(Product.is_active == True)
+@router.message(Command("products"))
+async def list_products(msg: types.Message):
+    products = await get_all_products()
+    for product in products:
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[[
+                InlineKeyboardButton(text="🛒 加入购物车", callback_data=f"add_cart:{product.id}"),
+                InlineKeyboardButton(text="💰 立即购买", callback_data=f"buy:{product.id}")
+            ]]
         )
-        products = result.scalars().all()
-        return products
-    if not products:
-        await message.answer("📭 当前没有上架的商品")
-        return
+        await msg.answer(format_product_detail(product), reply_markup=kb)
 
-    for p in products:
-        # 按钮：加入购物车 / 立即购买
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text=f"🛒 加入购物车", callback_data=f"addcart:{p.id}")],
-                [InlineKeyboardButton(text=f"💳 立即购买 {p.price} 元", callback_data=f"buy:{p.id}")]
-            ]
-        )
 
-        caption = f"📦 <b>{p.name}</b>\n💰 价格: {p.price} 元\n📦 库存: {p.stock}\n\n{p.description or ''}"
+# ----------------------------
+# 回调选择价格\ 
+# ----------------------------
+@router.callback_query(F.data.startswith("set_stock:"))
+async def handle_set_stock(callback: CallbackQuery):
+    try:
+        if not callback.data:
+            await _safe_reply(callback,"数据异常", show_alert=True)
+            return
 
-        if p.image_url:  # 如果商品有图片
-            await message.answer_photo(photo=p.image_url, caption=caption, reply_markup=keyboard)
+        parts = callback.data.split(":")
+        if len(parts) != 3:
+            await _safe_reply(callback,"数据异常", show_alert=True)
+            return
+        
+        _, name, stock = parts
+        stock_temp[callback.from_user.id] = int(stock)
+        await _safe_reply(callback,f"✅ 已选择库存 {stock}", show_alert=True)
+
+        price = price_temp.get(callback.from_user.id)
+        if price is None:
+            await _safe_reply(callback,"⚠️ 请先选择价格", show_alert=True)
+            return
+
+        info = admin_product_data.get(callback.from_user.id, {})
+        description = info.get("description", "")
+        
+        async with get_async_session() as session:
+            product = Product(
+                name=name,
+                price=price,
+                stock=int(stock),
+                description=description,
+                is_active=True,
+            )
+            session.add(product)
+            await session.commit()
+            await session.refresh(product)
+
+        # 使用 _safe_reply 代替直接 edit_text，兼容更多场景
+        msg = callback.message
+        if isinstance(msg, Message):
+            await _safe_reply(callback, f"✅ 商品已添加：{product.name} ¥{product.price} 库存:{product.stock}")
         else:
-            await message.answer(caption, reply_markup=keyboard)
+            # 如果消息不可访问，改用 callback.answer 弹窗提示用户
+            await callback.answer(f"✅ 商品已添加：{product.name} ¥{product.price} 库存:{product.stock}", show_alert=True)          
+        price_temp.pop(callback.from_user.id, None)
+        stock_temp.pop(callback.from_user.id, None)
+        admin_product_data.pop(callback.from_user.id, None)
+              
+        AdminProductSession.set_stock(callback.from_user.id, int(stock))
+        
+    except Exception as e:
+        logger.exception(f"添加商品失败: {e}")
+        await _safe_reply(callback,"❌ 添加商品失败", show_alert=True)
+
+@router.callback_query(lambda c: c.data and c.data.startswith("set_price:"))
+async def set_price_callback(cb: types.CallbackQuery):
+    data = cb.data
+    if not data:
+        await _safe_reply(cb, "❌ 数据为空", show_alert=True)
+        return
+
+    try:
+        # 解析数据
+        _, name, price = data.split(":")
+        user_id = cb.from_user.id
+        price_float = float(price)
+        price_temp[cb.from_user.id] = price_float
+        # 设置价格到临时 session
+        AdminProductSession.set_price(cb.from_user.id, float(price))
+        # ✅ 获取用户会话（如已有数据）
+        session = AdminProductSession.get(user_id)
+        
+        await _safe_reply(cb,f"✅ 价格已设置: ¥{price}")
+        # 你也可以在这里判断：如果库存也设置了，就可以入库
+        if session and "stock" in session:
+            stock = session["stock"]
+            description = session.get("description", "")
+            async with get_async_session() as db:
+                product = Product(
+                    name=name,
+                    price=float(price),
+                    stock=stock,
+                    description=description,
+                    is_active=True
+                )
+                db.add(product)
+                await db.commit()
+                await _safe_reply(cb,f"✅ 商品添加成功：{name} ¥{price} 库存:{stock}")
+                AdminProductSession.clear(user_id)
+    except ValueError:
+        await _safe_reply(cb, "❌ 数据格式错误", show_alert=True)
 
 # -----------------------------
 # 购买回调
 # -----------------------------
 @router.callback_query(F.data.startswith("buy:"))
-async def handle_buy(callback: types.CallbackQuery):
-    @handle_errors
-    async def _inner(callback: types.CallbackQuery):
-        if not callback.data:
-            await callback.answer("⚠️ 参数错误", show_alert=True)
-            return       
-        product_id = int(callback.data.split(":")[1])
-        async with get_async_session() as db:
-            product = await db.get(Product, product_id)
-            user = await db.get(User, callback.from_user.id)
-            if not product or not user:
-                await callback.answer("❌ 商品不存在", show_alert=True)
-                return
-            # 创建订单
-            total_amount = Decimal(str(product.price))
-            order = Order(user_id=user.id, total_amount=total_amount)
-            db.add(order)
-            await db.flush()
-            db.add(OrderItem(order_id=order.id, product_id=product.id, quantity=1, unit_price=total_amount))
-            await db.commit()
+@handle_errors
+async def handle_buy(callback: CallbackQuery):
+    if not callback.data:
+        await _safe_reply(callback,"⚠️ 参数错误", show_alert=True)
+        return
 
-            order_item = OrderItem(
-                order_id=order.id,
-                product_id=product.id,
-                quantity=1,
-                unit_price=total_amount,
+    try:
+        product_id = UUID(callback.data.split(":")[1])
+    except Exception:
+        await _safe_reply(callback,"⚠️ 商品ID格式错误", show_alert=True)
+        return
+
+    async with get_async_session() as db:
+        product = await ProductCRUD.get_by_id(db, product_id)
+        if not product:
+            await _safe_reply(callback,"❌ 商品不存在", show_alert=True)
+            return
+
+        # 获取用户
+        result = await db.execute(select(User).where(User.telegram_id == callback.from_user.id))
+        user = result.scalar_one_or_none()
+        if not user:
+            await _safe_reply(callback, "⚠️ 用户未注册", show_alert=True)
+            return
+
+        # 创建订单和订单项
+        items = [{"product_id": product.id, "quantity": 1, "unit_price": product.price}]
+        order = await OrderCRUD.create_with_items(db, user.id, items)
+        if not order:
+            await _safe_reply(callback, "❌ 创建订单失败", show_alert=True)
+            return
+   
+        # 生成支付链接
+        payment_url = PaymentService.create_payment(str(order.id), float(product.price))
+        qr_img = await generate_payment_qr(payment_url)
+        photo = BufferedInputFile(qr_img.getvalue(), filename="qrcode.png")
+  
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="去支付", callback_data=f"pay:{order.id}")]
+        ])
+        
+        msg = callback.message
+        caption = f"✅ 下单成功！\n🧾 订单号: {order.id}\n📦 商品: {product.name}\n💵 金额: ¥{product.price:.2f}"
+
+        if isinstance(msg, Message):
+            await _safe_reply(callback, caption, reply_markup=kb)
+          
+        else:       
+            await _safe_reply(callback, 
+                f"✅ 下单成功！\n🧾 订单号: {order.id}\n📦 商品: {product.name}\n💵 金额: ¥{product.price:.2f}",
+                reply_markup=kb,
+                show_alert=False
             )
-            db.add(order_item)
-            await db.commit()
-
-            kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="去支付", callback_data=f"pay:{order.id}")]
-            ])
-
-            msg = getattr(callback, "message", None)
-            if msg and hasattr(msg, "edit_text"):
-                await msg.edit_text(
-                    f"✅ 下单成功！\n🧾 订单号: {order.id}\n📦 商品: {product.name}\n💵 金额: ¥{total_amount:.2f}",
-                    reply_markup=kb,
-                )
-            elif callback.bot:
-                await callback.bot.send_message(
-                    chat_id=callback.from_user.id,
-                    text=f"✅ 下单成功！\n🧾 订单号: {order.id}\n📦 商品: {product.name}\n💵 金额: ¥{total_amount:.2f}",
-                )
-
-    return await _inner(callback)
-
 
 # -----------------------------
 # 添加到购物车
 # -----------------------------
 @router.callback_query(F.data.startswith("add_cart:"))
-async def add_to_cart(callback: types.CallbackQuery):
-    @handle_errors
-    @db_session
-    async def _inner(callback: types.CallbackQuery, db: AsyncSession):
-        if not callback.data:
-            await callback.answer("⚠️ 参数错误", show_alert=True)
-            return
+@handle_errors
+@db_session
+async def add_to_cart(callback: CallbackQuery, db: AsyncSession):
+    if not callback.data:
+        await _safe_reply(callback,"⚠️ 参数错误", show_alert=True)
+        return
 
-        parts = callback.data.split(":")
-        product_id = int(parts[1])
-        tg_id = callback.from_user.id
+    try:
+        product_id = UUID(callback.data.split(":")[1])
+    except Exception:
+        await _safe_reply(callback,"⚠️ 商品ID格式错误", show_alert=True)
+        return
 
-        result = await db.execute(select(User).where(User.telegram_id == tg_id))
-        user = result.scalar_one_or_none()
-        if not user:
-            await callback.answer("⚠️ 用户未注册", show_alert=True)
-            return
+    tg_id = callback.from_user.id
 
-        product = await db.get(Product, product_id)
-        if not product:
-            await callback.answer("⚠️ 商品不存在", show_alert=True)
-            return
+    result = await db.execute(select(User).where(User.telegram_id == tg_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        await _safe_reply(callback,"⚠️ 用户未注册", show_alert=True)
+        return
 
-        cart_item = CartItem(
+    product = await ProductCRUD.get_by_id(db, product_id)
+    if not product:
+        await _safe_reply(callback,"⚠️ 商品不存在", show_alert=True)
+        return
+
+    # 调用统一的 CartCRUD.add_item 方法，避免重复添加商品
+    try:
+        cart_item = await CartCRUD.add_item(
+            db,
             user_id=user.id,
             product_id=product.id,
-            product_name=product.name,
-            unit_price=float(product.price),
             quantity=1,
+            product_name=product.name,
+            unit_price=product.price,
         )
-        db.add(cart_item)
-        await db.commit()
+    except Exception as e:
+        logger.error(f"加入购物车失败: {e}")
+        await _safe_reply(callback,"❌ 加入购物车失败", show_alert=True)
+        return
 
-        await callback.answer(f"✅ 已加入购物车：{product.name}", show_alert=False)
-
-    return await _inner(callback)
+    await _safe_reply(callback,f"✅ 已加入购物车：{product.name}", show_alert=False)
