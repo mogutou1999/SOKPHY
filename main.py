@@ -13,11 +13,12 @@ from aiogram.types import BotCommand
 from config.settings import get_app_settings, AppSettings
 from config.loader import periodic_refresh
 from db.session import  engine,init_models
-from handlers import setup_all_handlers,products
+from handlers import setup_all_handlers
 from handlers.context import RedisService
 from api import router as api_router  # API 路由
 import uvicorn
-from handlers import admin_products
+from fastapi.staticfiles import StaticFiles
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -98,7 +99,7 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
-
+app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="frontend")
 # CORS
 app.add_middleware(
     CORSMiddleware,
@@ -109,7 +110,7 @@ app.add_middleware(
 )
 
 # 注册 API 路由
-app.include_router(api_router, tags=["Core"])
+app.include_router(api_router, prefix="/api", tags=["Core"])
 
 if __name__ == "__main__":
     import uvicorn
