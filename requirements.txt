@@ -8,7 +8,7 @@ aiofiles==23.2.1
     # via
     #   -r requirements.in
     #   aiogram
-aiogram==3.12.0
+aiogram==3.11.4 
     # via -r requirements.in
 aiohttp==3.9.5
     # via
