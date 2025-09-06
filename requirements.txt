@@ -1,7 +1,7 @@
 --find-links=wheelhouse
 
 aiofiles==23.2.1
-SQLAlchemy==2.0.30
+
 asyncpg==0.29.0
 cryptography==41.0.7
 aiogram==3.12.0
