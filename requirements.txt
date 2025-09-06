@@ -1,9 +1,9 @@
 --find-links=wheelhouse
 
-aiofiles==23.2.1
+aiofiles
 
-asyncpg==0.29.0
-cryptography==41.0.7
+asyncpg
+cryptography
 aiogram==3.12.0
     # via -r requirements.in
 aiohttp==3.9.5
