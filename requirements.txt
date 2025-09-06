@@ -1,5 +1,5 @@
 --find-links=wheelhouse
-uvicorn==0.29.0
+uvicorn[standard]==0.29.0
 aiofiles
 SQLAlchemy==2.0.30
 asyncpg
