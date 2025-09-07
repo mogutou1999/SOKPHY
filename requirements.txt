@@ -3,7 +3,7 @@ fastapi==0.115.0
 uvicorn[standard]==0.30.0
 aiofiles==23.2.1
 
-# 数据库
+# 数据库（纯 Python，SQLite）
 aiosqlite==0.20.0
 SQLAlchemy==2.0.30
 alembic==1.13.2
@@ -19,8 +19,6 @@ aiohttp==3.9.5
 aiohttp-socks==0.8.0
 
 # 其他工具库
-orjson==3.9.15
-cryptography==42.0.7
 python-dotenv==1.0.1
 qrcode[pil]==8.2
 requests==2.32.5
@@ -30,7 +28,7 @@ stripe==11.5.0
 # 异步任务/调度（可选）
 arq==0.26.3
 celery[redis]==5.3.6
-redis[hiredis]==5.3.1
+redis==5.3.1
 
 # 工具与调试
 watchfiles==0.21.0
