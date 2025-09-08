@@ -1,11 +1,10 @@
 # utils/decorators.py
 import functools
 import logging
-import asyncio
 import time
 from typing import Callable, Any, Coroutine, TypeVar, Union, Optional, cast, Sequence
 from contextlib import suppress
-from datetime import datetime, timezone
+
 from aiogram.types import CallbackQuery, Message
    
 from utils.formatting import _safe_reply
@@ -16,7 +15,7 @@ from sqlalchemy import select
 from db.models import User as Users
 from db.session import  get_async_session
 from config.settings import settings
-from handlers.start import handle_start
+
 logger = logging.getLogger(__name__)
 router = Router()
 _user_cooldown: dict[int, float] = {}
@@ -53,12 +52,6 @@ async def db_check_is_admin(user_id: int) -> bool:
         return bool(is_admin)
 
 
-async def test():
-    start = datetime.now(timezone.utc)
-    # 模拟100次并发调用
-    tasks = [handle_start(message=..., db=...) for _ in range(100)]
-    await asyncio.gather(*tasks)
-    print(f"耗时: {(datetime.now(timezone.utc) - start).total_seconds():.2f}s")
 
 
 # --- 核心装饰器 ---
