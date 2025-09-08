@@ -1,18 +1,22 @@
 # handlers/auth.py
-from aiogram import Router, types, F
+from aiogram import Router
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery,InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from typing import Optional, Dict
 import logging
 from datetime import datetime, timezone
-from db.models import User, Product
+from db.models import User
 from db.session import get_async_session
 from config.settings import settings
 from utils.formatting import _safe_reply
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
+from aiogram.types import User as TgUser
+from db.models import User as DbUser
+
+
 logger = logging.getLogger(__name__)
 router = Router()
 
@@ -40,50 +44,6 @@ class VerificationManager:
     def delete_code(cls, user_id: int) -> None:
         cls._codes.pop(user_id, None)
 
-# （aiogram v3）
-@router.message(F.text == "/start")
-async def handle_start(message: Message):
-    if not message.from_user:
-        await _safe_reply(message, "⚠️ 用户信息获取失败")
-        return
-
-    user_id = message.from_user.id
-
-    async with get_async_session() as session:
-        try:
-            logger.info(f"Incoming user: {user_id}, {message.from_user.username}")
-
-            # 获取或创建用户
-            user = await get_or_create_user(session, message.from_user)
-            if not user:
-                user = User(
-                    telegram_id=user_id,
-                    username=message.from_user.username,
-                    created_at=datetime.now(timezone.utc),  # ✅ UTC datetime
-                )
-                session.add(user)
-                await session.commit()
-
-            # 安全用户名显示
-            name = user.first_name.strip() if user.first_name and user.first_name.strip() else "用户"
-
-            # 内联按钮
-            kb = InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [InlineKeyboardButton(text="🛍 查看商品", callback_data="open_menu")],
-                    [InlineKeyboardButton(text="👤 我的账户", callback_data="open_account")]
-                ]
-            )
-
-            await _safe_reply(
-                message,
-                f"👋 欢迎，{name}！\n点击下方按钮开始购物 ↓",
-                reply_markup=kb
-            )
-
-        except Exception:
-            logger.exception("Start处理失败")
-            await _safe_reply(message, "❌ 服务暂时不可用")
 
 @router.message(Command("logout"))
 async def logout_demo(message: Message):
@@ -178,11 +138,14 @@ async def handle_account(message: Message):
 # -------------------------------
 # 工具函数
 # -------------------------------
-async def get_or_create_user(session: AsyncSession, tg_user: types.User) -> User:
+async def get_or_create_user(session: AsyncSession, tg_user: TgUser | None) -> DbUser:
+    if tg_user is None:
+        raise ValueError("Telegram 用户信息为空")
     async with session.begin():
-        stmt = select(User).where(User.telegram_id == tg_user.id).with_for_update()
-        user = (await session.execute(stmt)).scalar_one_or_none()
-
+        stmt = select(DbUser).where(DbUser.telegram_id == tg_user.id).with_for_update()
+        result = await session.execute(stmt)
+        user = result.scalar_one_or_none()
+        
         now = datetime.now(timezone.utc)
 
         if not user:
