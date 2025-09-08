@@ -1,9 +1,9 @@
-# services/start.py
+# handlers/start.py
 import logging
-from typing import Optional
-from aiogram import Router
+from typing import cast,Optional
+from aiogram import Bot,Router
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import Message,InlineKeyboardButton,InlineKeyboardMarkup,User as TelegramUser
 from sqlalchemy import select, func, case
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +12,9 @@ from db.models import User, Order
 from config.settings import settings
 from pydantic import BaseModel
 from utils.formatting import _safe_reply
+from utils.decorators import db_session,user_required
+ 
+from db.models import User as DBUser
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -63,31 +66,44 @@ async def get_user_by_id(db: AsyncSession, telegram_id: int) -> Optional[User]:
         logger.error(f"获取用户失败 telegram_id={telegram_id}: {e}")
         return None
 
+# --- 路由处理器示例 ---
 @router.message(Command("start"))
-async def handle_stats(message: Message):
-    if not message.from_user:
-        await _safe_reply(message,"⚠️ 用户信息获取失败")
+@db_session
+@user_required(check_registration=False)
+async def handle_start(message: Message, db: AsyncSession, bot: Bot) -> None:
+    from handlers.auth import get_or_create_user  # 延迟导入避免循环依赖
+
+    tg_user = message.from_user
+
+    if tg_user is None:
+        await _safe_reply(message, "⚠️ 无法获取用户信息")
         return
-    user_id = message.from_user.id
 
-    async with get_async_session() as db:
-        user = await get_user_by_id(db, user_id)
+    # 现在 tg_user 肯定不是 None，可以安全使用
+    new_user = await get_or_create_user(db, tg_user)
+    user = await get_or_create_user(db, tg_user)
+    if new_user is None:
+        await _safe_reply(message, "❌ 注册失败，请稍后重试")
+        return
 
-        if not is_admin(user_id):
-            await _safe_reply(message,"🚫 无权限查看统计数据")
-            return
+    # 是管理员？显示统计数据
+    if is_admin(user.telegram_id):
+        stats = await get_site_stats(db)
+        text = (
+            "📊 <b>系统统计</b>：\n\n"
+            f"👥 用户总数：<b>{stats.total_users}</b>\n"
+            f"🛒 订单总数：<b>{stats.total_orders}</b>\n"
+            f"💰 销售总额：<b>¥{stats.total_revenue:.2f}</b>\n"
+            f"📦 已发货订单：<b>{stats.shipped_orders}</b>\n"
+            f"💸 已退款订单：<b>{stats.refunded_orders}</b>\n"
+        )
+        await _safe_reply(message, text)
+        return
 
-        try:
-            stats = await get_site_stats(db)
-            text = (
-                "📊 <b>系统统计</b>：\n\n"
-                f"👥 用户总数：<b>{stats.total_users}</b>\n"
-                f"🛒 订单总数：<b>{stats.total_orders}</b>\n"
-                f"💰 销售总额：<b>¥{stats.total_revenue:.2f}</b>\n"
-                f"📦 已发货订单：<b>{stats.shipped_orders}</b>\n"
-                f"💸 已退款订单：<b>{stats.refunded_orders}</b>\n"
-            )
-            await _safe_reply(message,text)
-        except ValueError as e:
-            logger.exception(f"获取统计数据失败: {e}")
-            await _safe_reply(message,"❌ 无法加载统计数据，请稍后再试")
+    # 普通用户：显示购物相关按钮
+    buttons = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🛍 查看商品", callback_data="open_menu")],
+        [InlineKeyboardButton(text="👤 我的账户", callback_data="open_account")]
+    ])
+    name = new_user.first_name.strip() if new_user.first_name else "用户"
+    await _safe_reply(message, f"👋 欢迎，{name}！\n点击下方按钮开始购物 ↓", reply_markup=buttons)
