@@ -13,9 +13,9 @@ from config.settings import settings
 from pydantic import BaseModel
 from utils.formatting import _safe_reply
 from utils.decorators import db_session,user_required
- 
+from datetime import datetime, timezone
 from db.models import User as DBUser
-
+import asyncio
 router = Router()
 logger = logging.getLogger(__name__)
 
@@ -107,3 +107,13 @@ async def handle_start(message: Message, db: AsyncSession, bot: Bot) -> None:
     ])
     name = new_user.first_name.strip() if new_user.first_name else "用户"
     await _safe_reply(message, f"👋 欢迎，{name}！\n点击下方按钮开始购物 ↓", reply_markup=buttons)
+    
+async def test():
+    start = datetime.now(timezone.utc)
+    # 模拟100次并发调用
+    tasks = [handle_start(message=..., db=...) for _ in range(100)]
+    await asyncio.gather(*tasks)
+    print(f"耗时: {(datetime.now(timezone.utc) - start).total_seconds():.2f}s")
+    
+    
+    
