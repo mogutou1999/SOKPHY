@@ -103,7 +103,11 @@ async def handle_start(message: Message, db: AsyncSession, bot: Bot) -> None:
     # 普通用户：显示购物相关按钮
     buttons = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🛍 查看商品", callback_data="open_menu")],
-        [InlineKeyboardButton(text="👤 我的账户", callback_data="open_account")]
+        [InlineKeyboardButton(text="👤 我的账户", callback_data="open_account")],
+        [InlineKeyboardButton(text="🛒 开始购物", callback_data="shop")],
+        [InlineKeyboardButton(text="🛒 加入购物车", callback_data="add_to_cart:1")],
+        [InlineKeyboardButton(text="🧾 查看详情", callback_data="view_details:1")],
+        [InlineKeyboardButton(text="💳 立即购买", callback_data="buy_now:1")],
     ])
     name = new_user.first_name.strip() if new_user.first_name else "用户"
     await _safe_reply(message, f"👋 欢迎，{name}！\n点击下方按钮开始购物 ↓", reply_markup=buttons)
