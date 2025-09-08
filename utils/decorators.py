@@ -1,4 +1,4 @@
-# handlers/decorators.py
+# utils/decorators.py
 import functools
 import logging
 import asyncio
@@ -6,13 +6,8 @@ import time
 from typing import Callable, Any, Coroutine, TypeVar, Union, Optional, cast, Sequence
 from contextlib import suppress
 from datetime import datetime, timezone
-from aiogram.types import (
-    Message,
-    CallbackQuery,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-    User,
-)
+from aiogram.types import CallbackQuery, Message
+   
 from utils.formatting import _safe_reply
 from aiogram import Bot, Router
 from aiogram.filters import Command
@@ -21,7 +16,7 @@ from sqlalchemy import select
 from db.models import User as Users
 from db.session import  get_async_session
 from config.settings import settings
-
+from handlers.start import handle_start
 logger = logging.getLogger(__name__)
 router = Router()
 _user_cooldown: dict[int, float] = {}
@@ -169,34 +164,7 @@ async def safe_reply(event: Union[Message, CallbackQuery], text: str, **kwargs):
     except ValueError as e:
         logger.warning(f"[safe_reply] 消息发送失败: {e}")
 
-# --- 路由处理器示例 ---
-@router.message(Command("start"))
-@db_session
-@user_required(check_registration=False)
-async def handle_start(message: Message, db: AsyncSession, bot: Bot) -> None:
-    from handlers.auth import get_or_create_user  # 延迟导入，避免循环依赖
 
-    user = cast(User, message.from_user)
-    
-    # 创建用户记录
-    new_user = await get_or_create_user(db, user)
-    if not new_user:
-        await _safe_reply(message,"❌ 注册失败，请重试")
-        return
-
-    # 构建响应
-    buttons = [[InlineKeyboardButton(text="🛒 开始购物", callback_data="shop")]]
-    if not new_user.is_verified:
-        buttons.append(
-            [InlineKeyboardButton(text="🔐 验证账号", callback_data="verify")]
-        )
-
-    markup = InlineKeyboardMarkup(inline_keyboard=buttons)
-
-    await _safe_reply(message,
-        f"👋 欢迎 {user.full_name}！",
-        reply_markup=markup,
-    )
 
 def handle_errors(
     func: Callable[..., Coroutine[Any, Any, R]],
