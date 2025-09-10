@@ -8,7 +8,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from db.session import get_async_session
 from utils.formatting import format_product_detail
 from utils.formatting import _safe_reply
-
+from decimal import Decimal
 
 
 
@@ -115,14 +115,27 @@ async def show_main_menu(callback: CallbackQuery):
             await _safe_reply(msg or callback,caption, reply_markup=keyboard)
 
 # ✅ 创建商品
-async def create_product_db(name: str, price: float, stock: int) -> Product:
-    """在数据库中创建商品"""
-    async with get_async_session() as session:
-        new_product = Product(name=name, price=price, stock=stock, is_active=True)
-        session.add(new_product)
-        await session.commit()
-        await session.refresh(new_product)
-        return new_product
+async def create_product_db(
+    session: AsyncSession,
+    name: str,
+    price: Decimal,   # ✅ 改成 Decimal
+    stock: int,  
+    description: str = "默认描述",
+    image_file_id: str | None = None
+    
+) -> Product:
+    new_product = Product(
+        name=name,
+        price=price,
+        stock=stock,
+        description=description,
+        image_file_id=image_file_id,
+        is_active=True,
+    )
+    session.add(new_product)
+    await session.commit()
+    await session.refresh(new_product)
+    return new_product
 
 # ✅ 更新商品库存
 async def update_product_stock(product_id: UUID, stock: int) -> None:
