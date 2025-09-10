@@ -1,17 +1,13 @@
 # handlers/menu.py
 from uuid import UUID
-from typing import  Union, Sequence
 from aiogram import Router, types, F
 from sqlalchemy import select
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery,InlineKeyboardMarkup, InlineKeyboardButton,BufferedInputFile
-from decimal import Decimal
 import logging
 from db.session import get_async_session
-from db.models import Product, User
+from db.models import Product
 from db.crud import ProductCRUD, OrderCRUD, UserCRUD
-from services.carts import CartService
-from services import orders as order_service
 from handlers.payment import PaymentService, generate_payment_qr
 from utils.formatting import _safe_reply, build_product_menu, build_product_detail_kb
 from utils.decorators import handle_errors
