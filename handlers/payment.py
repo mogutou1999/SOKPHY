@@ -1,4 +1,4 @@
-# services/payment.py
+# handlers/payment.py
 import asyncio
 import logging
 from io import BytesIO
@@ -6,7 +6,6 @@ import qrcode
 from db.session import get_async_session
 from db.models import Order, OrderStatus 
 from sqlalchemy import select
-from utils.alipay import generate_alipay_qr, verify_alipay_sign
 from qrcode.constants import ERROR_CORRECT_L
 from aiogram import Router,Bot, types
 from aiogram.types import Message, BufferedInputFile
@@ -69,34 +68,8 @@ class PaymentService:
         # 这里用支付宝或 Stripe 验签逻辑
         return True
     
-async def pay(self, total_amount: float) -> dict:
-        logger.info(f"💰 Paying ${total_amount} (sandbox={self.sandbox})")
-        await asyncio.sleep(1)
-        return {"status": "success", "total_amount": total_amount}
 
-async def create_stripe_checkout_session(self, amount: int, user_id: int) -> str:
-        """生成 Stripe Checkout 链接"""
-        if self.sandbox:
-            logger.info("Sandbox 模式，返回模拟支付链接")
-            return f"https://sandbox.example.com/payment/{user_id}"
 
-        session = stripe.checkout.Session.create(
-            payment_method_types=['card'],
-            line_items=[{
-                'price_data': {
-                    'currency': settings.currency,  # USD
-                    'product_data': {'name': f"订单 #{user_id}"},
-                    'unit_amount': amount,  # 美分
-                },
-                'quantity': 1,
-            }],
-            mode='payment',
-            success_url="https://你的域名/success",
-            cancel_url="https://你的域名/cancel",
-        )
-        assert session.id is not None, "Stripe session id 不可为 None"
-        return session.url  # type: ignore[reportGeneralTypeIssues]       
-      
     
 @router.message(lambda m: m.text == "/pay")
 async def pay_command(message: types.Message):
