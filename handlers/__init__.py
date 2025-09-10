@@ -13,23 +13,26 @@ from .buttons import router as buttons_router
 from .commands import router as commands_router
 from .errors import router as errors_router
 from .payment import router as payment_router
-
+from .admin_config import router as admin_config_router
+from .admin_users import router as admin_users_router
 
 
 def setup_all_handlers(dp: Router):
     """
     统一注册所有 aiogram handler routers
     """
-    dp.include_router(payment_router)
     dp.include_router(start_router)
-    dp.include_router(buttons_router)
     dp.include_router(auth_router)
     dp.include_router(menu_router)
     dp.include_router(products_router)
-    dp.include_router(orders_router)
     dp.include_router(carts_router)
-    dp.include_router(admin_router)
+    dp.include_router(orders_router)
     dp.include_router(profile_router)
+    dp.include_router(buttons_router)
     dp.include_router(commands_router)
-    dp.include_router(errors_router)
+    dp.include_router(payment_router)
+    dp.include_router(admin_router)
     dp.include_router(admin_products_router)
+    dp.include_router(admin_users_router)
+    dp.include_router(admin_config_router)
+    dp.include_router(errors_router)
