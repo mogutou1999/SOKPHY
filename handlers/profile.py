@@ -28,25 +28,15 @@ logger = logging.getLogger(__name__)
 
 LANGUAGE_OPTIONS = {"en": "English", "zh": "中文", "es": "Español"}
 
-ADMIN_IDS = settings.admin_ids or []
-
-
-def is_admin(user_id: int) -> bool:
-    return user_id in ADMIN_IDS
-
-def get_user_id(obj: types.Message | types.CallbackQuery) -> Optional[int]:
-    return getattr(obj.from_user, "id", None)
+ADMIN_IDS = []
 
 class ProfileStates(StatesGroup):
     CHOICE = State()
     AWAIT_EMAIL = State()
     AWAIT_PHONE = State()
     
-
 class VerificationStates(StatesGroup):
     AWAIT_VERIFICATION = State()
-
-
 # -----------------------------
 # 获取用户对象
 # -----------------------------
@@ -58,6 +48,8 @@ async def get_user(session, user_id: int) -> Optional[User]:
         logger.exception(f"获取用户 {user_id} 失败: {e}")
         return None
     
+def get_user_id(obj: types.Message | types.CallbackQuery) -> Optional[int]:
+    return getattr(obj.from_user, "id", None)    
 # ======================
 # /profile 查看资料
 # ======================
@@ -88,10 +80,7 @@ async def get_user_profile(message: types.Message, state: FSMContext):
 
         keyboard = ReplyKeyboardMarkup(
             keyboard=[
-                [
-                    KeyboardButton(text="📧 修改邮箱"),
-                    KeyboardButton(text="📱 修改手机号"),
-                ],
+                [KeyboardButton(text="📧 修改邮箱"), KeyboardButton(text="📱 修改手机号")],
                 [KeyboardButton(text="🌐 修改语言"), KeyboardButton(text="❌ 取消")],
             ],
             resize_keyboard=True,
@@ -116,10 +105,7 @@ async def handle_choice(message: types.Message, state: FSMContext):
         await state.set_state(ProfileStates.AWAIT_PHONE)
     elif message.text == "🌐 修改语言":
         keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text=name, callback_data=f"set_lang_{code}")]
-                for code, name in LANGUAGE_OPTIONS.items()
-            ]
+            inline_keyboard=[[InlineKeyboardButton(text=name, callback_data=f"set_lang_{code}")] for code, name in LANGUAGE_OPTIONS.items()]
         )
         await _safe_reply(message, "请选择语言：", reply_markup=keyboard)
         await state.clear()
@@ -140,12 +126,10 @@ async def update_email(message: types.Message, state: FSMContext):
     if not message.text or "@" not in message.text:
         await _safe_reply(message, "❌ 无效邮箱，请重新输入。")
         return
-
     user_id = get_user_id(message)
     if not user_id:
         await _safe_reply(message, "⚠️ 无法获取用户ID")
         return
-
     async with get_async_session() as session:
         user = await get_user(session, user_id)
         if not user:
@@ -167,12 +151,10 @@ async def update_phone(message: types.Message, state: FSMContext):
     if not message.text or not message.text.isdigit():
         await _safe_reply(message, "❌ 无效手机号，请重新输入。")
         return
-
     user_id = get_user_id(message)
     if not user_id:
         await _safe_reply(message, "⚠️ 无法获取用户ID")
         return
-
     async with get_async_session() as session:
         user = await get_user(session, user_id)
         if not user:
@@ -181,10 +163,7 @@ async def update_phone(message: types.Message, state: FSMContext):
             user.phone = message.text.strip()
             await session.commit()
             await _safe_reply(message, f"✅ 手机号已更新为：{user.phone}")
-
     await state.clear()
-
-
 
 # ======================
 # 语言选择回调
@@ -193,23 +172,15 @@ async def update_phone(message: types.Message, state: FSMContext):
 async def set_language_callback(callback: types.CallbackQuery):
     lang_code = (callback.data or "").replace("set_lang_", "")
     user_id = get_user_id(callback)
-
     if not user_id:
         await _safe_reply(callback, "⚠️ 无法获取用户ID", show_alert=True)
         return
-
     async with get_async_session() as session:
         user = await get_user(session, user_id)
-        if not user:
-            await _safe_reply(callback, "⚠️ 用户未找到。", show_alert=True)
-            return
-
+        if user:
             user.language = lang_code
-        await session.commit()
-        await _safe_reply(
-            callback,
-            f"✅ 语言已更新为 {LANGUAGE_OPTIONS.get(lang_code, lang_code)}"
-        )
+            await session.commit()
+            await _safe_reply(callback, f"✅ 语言已更新为 {LANGUAGE_OPTIONS.get(lang_code, lang_code)}")
        
 
 
